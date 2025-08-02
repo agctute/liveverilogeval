@@ -1,0 +1,8 @@
+rtllm_modules/
+config.yaml
+yosys_files/
+tests/
+__*__
+main_old.py
+data_temp
+rtllm_modules_pyverilog
