@@ -163,6 +163,9 @@ class Database:
             group_two (str): Second equivalence group ID
 
         The group with the lexicographically smaller ID becomes the merged group.
+        
+        Returns:
+            group: The merged group ID
         """
         assert group_one in self.designs
         assert group_two in self.designs
@@ -181,6 +184,7 @@ class Database:
                 q.equiv_ids.add(group_one)
             self.question_search[group_one].extend(self.question_search[group_two])
             self.question_search.pop(group_two, None)
+            return group_one
         else: 
             # Merge into group_two
             for d in self.designs[group_one]:
@@ -194,6 +198,7 @@ class Database:
                 q.equiv_ids.add(group_two)
             self.question_search[group_two].extend(self.question_search[group_one])
             self.question_search.pop(group_one, None)
+            return group_two
 
     def add_question(self, content: str, equiv_ids: set) -> bool:
         """

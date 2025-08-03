@@ -14,6 +14,54 @@ with open("config.yaml", "r") as config_file:
 
 batch_file_path = config['batch_dir_path']
 
+def process_design_with_mutants(db: Database, design_content: str, num_mutants: int = 4, mutation_level: int = 3):
+    """
+    Process a design by generating mutants and checking equivalence.
+    
+    Args:
+        db: Database instance to store designs
+        design_content: The original design content
+        num_mutants: Number of mutants to generate
+        mutation_level: Level of mutation to apply
+    """
+    # Standardize the design content
+    standardized_content = standardize(design_content)
+    
+    # Add the original design to database
+    original_equiv_id = hash_string(standardized_content)
+    db.add_design(standardized_content, original_equiv_id)
+    
+    # Generate mutants
+    mutants = mutate(standardized_content, num_mutants, mutation_level)
+    
+    # Add mutants to database with their hash as equivalence group ID
+    mutant_groups = []
+    for mutant in mutants:
+        mutant_equiv_id = hash_string(mutant['content'])
+        db.add_design(mutant['content'], mutant_equiv_id)
+        mutant_groups.append(mutant_equiv_id)
+    
+    mutant_groups.append(original_equiv_id)
+    
+    for i, group1 in enumerate(mutant_groups):
+        for j, group2 in enumerate(mutant_groups[i+1:], i+1):
+            if group1 == group2 or group1 not in db.designs or group2 not in db.designs:
+                continue
+            
+            # Get designs from each group
+            designs1 = db.designs[group1]
+            designs2 = db.designs[group2]
+            
+            if designs1 and designs2:
+                # Check equivalence between first design in each group
+                check = check_equivalence(batch_file_path, designs1[0].content, designs2[0].content)
+                if check:
+                    # Merge the groups
+                    db.merge_equiv_groups(group1, group2)
+                    # Update mutant_groups list after merge
+                    mutant_groups = [g for g in mutant_groups if g in db.designs]
+    return
+
 # Initialize database
 db = Database()
 
@@ -21,50 +69,11 @@ db = Database()
 with open("./data/designs.jsonl") as f:
     data = [json.loads(line) for line in f]
 
-# Get the traffic light design (index 36)
-traffic_light_design = data[36]
-traffic_light_content = standardize(traffic_light_design['content'])
-
-# Add the original traffic light design to database
-db.add_design(traffic_light_content, hash_string(traffic_light_content))
-
-# Generate mutants
-mutants = mutate(traffic_light_content, 4, 3)
-
-# Add mutants to database with temporary equivalence groups
-for i, mutant in enumerate(mutants):
-    temp_equiv_id = hash_string(mutant['content'])
-    db.add_design(mutant['content'], temp_equiv_id)
-
-# Check equivalence between mutants and merge groups if needed
-temp_groups = [f"temp_{i+1}" for i in range(len(mutants))]
-for i, group1 in enumerate(temp_groups):
-    for j, group2 in enumerate(temp_groups[i+1:], i+1):
-        if group1 == group2:
-            continue
-        
-        # Get designs from each group
-        designs1 = db.designs[group1]
-        designs2 = db.designs[group2]
-        
-        if designs1 and designs2:
-            # Check equivalence between first design in each group
-            check = check_equivalence(batch_file_path, designs1[0].content, designs2[0].content)
-            if check:
-                # Merge the groups
-                db.merge_equiv_groups(group1, group2)
-                # Update temp_groups list after merge
-                temp_groups = [g for g in temp_groups if g in db.designs]
-
-# Check equivalence with original design and merge if needed
-original_equiv_id = traffic_light_design['equivalence_group']
-for temp_group in temp_groups:
-    if temp_group in db.designs:
-        temp_designs = db.designs[temp_group]
-        if temp_designs:
-            equivalent = check_equivalence(batch_file_path, temp_designs[0].content, traffic_light_content)
-            if equivalent:
-                db.merge_equiv_groups(original_equiv_id, temp_group)
+# Process all designs with mutants
+print(f"Processing {len(data)} designs...")
+for i, design_data in enumerate(data):
+    print(f"Processing design {i+1}/{len(data)}")
+    process_design_with_mutants(db, design_data['content'])
 
 # Generate questions for each equivalence group
 questions = []
@@ -72,35 +81,41 @@ design_strs = []
 
 # Get one design from each equivalence group
 for equiv_id, designs in db.designs.items():
-    if designs:  # Make sure group is not empty
-        design_strs.append(designs[0].content)
-        questions.append(equiv_id)  # Placeholder for question generation
+    if not designs:
+        del db.designs[equiv_id]
+        continue
+
+    design_strs.append(designs[0].content)
+    questions.append(equiv_id)  # Placeholder for question generation
 
 # Generate questions in bulk
 questions_content = asyncio.run(gen_question_bulk(design_strs))
 
 # Verify questions and add to database
 for i, question in enumerate(questions_content):
+    print(f"Verifying question {i+1}/{len(questions_content)}")
     flag, generated_designs = asyncio.run(verify_question(question, design_strs[i], 100, 5))
     
     # Get the equivalence group ID for this design
     equiv_id = list(db.designs.keys())[i] if i < len(db.designs) else None
     
     if equiv_id:
-        # Add the generated designs to the same equivalence group
-        for generated_design in generated_designs:
-            db.add_design(generated_design, equiv_id)
         
         # Add the question to the database
         if flag:
             # Question verification succeeded - add to the same equivalence group
-            db.add_question(question, {equiv_id})
+            # Add the generated designs to the same equivalence group
+            for generated_design in generated_designs:
+                db.add_design(generated_design, equiv_id)
+            db.add_question(question, set([equiv_id]))
         else:
             # Question verification failed - create new equivalence group for each non-equivalent design
+            new_ids = set()
             for generated_design in generated_designs:
                 new_equiv_id = hash_string(generated_design)
                 db.add_design(generated_design, new_equiv_id)
-                db.add_question(question, {new_equiv_id})
+                new_ids.add(new_equiv_id)
+            db.add_question(question, new_ids)
 
 # Create output directory
 Path("data_temp").mkdir(exist_ok=True)
