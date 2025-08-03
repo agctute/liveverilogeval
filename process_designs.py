@@ -6,6 +6,7 @@ import json
 import hashlib
 from pathlib import Path
 from utils.equivalence_check import yosys_sanity_check
+from utils.mutate import standardize
 
 batch_file_path = './yosys_files/'
 def hash_file_content(content: str) -> str:
@@ -33,7 +34,6 @@ def process_designs():
     
     # Process each file
     entries = []
-    equivalence_group = 1
     
     for v_file in sorted(v_files):
         try:
@@ -42,6 +42,7 @@ def process_designs():
             # Read file content
             with open(v_file, 'r', encoding='utf-8') as f:
                 content = f.read()
+            content = standardize(content)
             sane_flag = yosys_sanity_check(batch_file_path, content)
             if not sane_flag:
                 raise ValueError("Failed sanity check")
@@ -51,13 +52,11 @@ def process_designs():
             # Create JSONL entry
             entry = {
                 "hash": file_hash,
-                "equivalence_group": equivalence_group,
+                "equivalence_group": file_hash,
                 "content": content
             }
             
             entries.append(entry)
-            equivalence_group += 1
-            
             print(f"  ✓ Added entry with hash: {file_hash[:16]}...")
             
         except Exception as e:

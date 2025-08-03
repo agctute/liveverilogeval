@@ -190,4 +190,3 @@ if __name__ == "__main__":
     design_dir = Path("./rtllm_modules/div_16bit").absolute()
     verified_file = design_dir / "verified_div_16bit.v"
     # test_check_equivalence_single(verified_file)
-    check_equivalence_adder_multi()

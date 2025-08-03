@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 import yaml
 import asyncio
+import random
 from utils.LLM_call import LLMClient
 from typing import List, Tuple
 import asyncio
@@ -111,7 +112,7 @@ async def gen_question_bulk(designs: List[str]):
     return responses
 
 
-async def verify_question(question: str, design: str, n: int) -> Tuple[bool, List[str]]:
+async def verify_question(question: str, design: str, n: int, k: int) -> Tuple[bool, List[str]]:
     """
     Verifies a question by generating n modules and checking equivalence with the original design.
     
@@ -119,6 +120,7 @@ async def verify_question(question: str, design: str, n: int) -> Tuple[bool, Lis
         question: The question to verify
         design: The original design string
         n: Number of modules to generate
+        k: Number of top most frequent designs to check for equivalence
         
     Returns:
         tuple: (True/False for equivalence, List of designs that are/are not equivalent)
@@ -193,35 +195,63 @@ async def verify_question(question: str, design: str, n: int) -> Tuple[bool, Lis
     for hash_val, count in hash_counts.most_common():
         print(f"  - Hash {hash_val[:16]}... appears {count} time(s)")
     
-    """old verification code that would only verify for the most frequently-occurring generated design"""
-    # most_common_hash, count = hash_counts.most_common(1)[0]
-    # if count > 1:
-    #     # Multiple designs with the same hash - select the most frequent one
-    #     print(f"✓ Selected most frequent design (appears {count} times)")
-    #     selected_design = next(d for d in valid_designs if d['hash'] == most_common_hash)
-    #     final_design = selected_design['content']
-    # else:
-    #     # All designs are unique - select the first one
-    #     print(f"✓ All designs are unique, selected the first design")
-    #     selected_design = valid_designs[0]
-    #     final_design = selected_design['content']
+    # Select top k most frequent designs with random tie-breaking
+    unique_hashes = list(hash_counts.keys())
+    if len(unique_hashes) <= k:
+        # If we have k or fewer unique designs, check all of them
+        selected_hashes = unique_hashes
+        print(f"✓ Checking all {len(selected_hashes)} unique designs (≤ k={k})")
+    else:
+        # Get the top k most frequent hashes
+        most_common_hashes = hash_counts.most_common()
+        
+        # Find the frequency threshold for the k-th most frequent design
+        k_th_frequency = most_common_hashes[k-1][1]
+        
+        # Find all hashes that have the k_th_frequency (potential ties)
+        tied_hashes = [hash_val for hash_val, count in most_common_hashes if count == k_th_frequency]
+        
+        # Select hashes with frequency > k_th_frequency (guaranteed to be in top k)
+        selected_hashes = [hash_val for hash_val, count in most_common_hashes if count > k_th_frequency]
+        
+        # If we have ties at the k-th position, randomly select from tied hashes
+        if len(selected_hashes) < k:
+            remaining_slots = k - len(selected_hashes)
+            # Randomly select from tied hashes
+            random.shuffle(tied_hashes)
+            selected_hashes.extend(tied_hashes[:remaining_slots])
+        
+        print(f"✓ Selected top {len(selected_hashes)} most frequent designs (k={k})")
+        if len(tied_hashes) > 1:
+            print(f"  - Resolved tie at frequency {k_th_frequency} by random selection")
     
+    # Get the actual design contents for selected hashes
+    selected_designs = []
+    for hash_val in selected_hashes:
+        # Get the first design with this hash
+        design_content = next(d['content'] for d in valid_designs if d['hash'] == hash_val)
+        selected_designs.append(design_content)
+    
+    # Check equivalence for selected designs
     batch_file_path = "./yosys_files/"
     equivalents = []
     non_equivalents = []
     equiv_flag = False
-    for des in generated_designs:
-        is_equivalent = check_equivalence(batch_file_path, des['content'], design)
+    
+    for i, design_content in enumerate(selected_designs):
+        print(f"Checking design {i+1}/{len(selected_designs)} (hash: {selected_hashes[i][:16]}...)")
+        is_equivalent = check_equivalence(batch_file_path, design_content, design)
         if is_equivalent:
             equiv_flag = True
-            equivalents.append(des['content'])
+            equivalents.append(design_content)
         else:
-            non_equivalents.append(des['content'])
+            non_equivalents.append(design_content)
+    
     if equiv_flag:
-        print(f"✓ Question verification successful - design is equivalent")
+        print(f"✓ Question verification successful - {len(equivalents)} design(s) are equivalent")
         return True, equivalents
     else:
-        print(f"✗ Question verification failed - design is not equivalent")
+        print(f"✗ Question verification failed - none of the top {k} designs are equivalent")
         return False, non_equivalents
     # except Exception as e:
     #     print(f"Error in verify_question: {e}")
