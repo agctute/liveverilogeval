@@ -1,1 +1,4 @@
 api_key: #TODO: Your API Key here
+calls_per_min: 300 # Adjust depending on model rate limits
+batch_dir_path: ./yosys_files/ # Directory to store temporary yosys files
+starting_verilog_dir: './rtllm_modules_pyverilog' # Directory to store generated verilog files
