@@ -1,17 +1,26 @@
-# Credit goes to Yubeaton et al. for functions in this file, source: https://github.com/wilyub/VeriThoughts
+# Credit goes to Yubeaton et al. for some initial functions in this file, source: https://github.com/wilyub/VeriThoughts
 import subprocess
 import re
 from pathlib import Path
 import traceback
+import asyncio
 
-def rename_modules_and_instantiations(verilog_code):
+def rename_modules_and_instantiations(verilog_code, obscure_names: bool = False):
     # Step 1: Find all module names (including those with parameters using #(...))
     module_pattern = re.compile(r'\bmodule\s+(\w+)\s*(?:#\s*\(.*?\))?\s*\(', re.DOTALL)
     module_names = module_pattern.findall(verilog_code)
 
     # Step 2: Create a mapping from old to new names
-    rename_map = {name: name + '1' for name in module_names}
-
+    if obscure_names:
+        rename_map = {}
+        for i in range(len(module_names)):
+            if i == 0:
+                rename_map[module_names[i]] = 'dut'
+            else:
+                rename_map[module_names[i]] = 'dut_dependency_' + str(i+1)
+    else:
+        rename_map = {name: '1_' + name for name in module_names}
+    
     # Step 3: Replace module declarations
     def replace_module_decl(match):
         original_name = match.group(1)
@@ -76,12 +85,12 @@ def create_yosys_files(batch_file_path: str, initial_code: str, ground_truth: st
     # print(result.stderr)
     return yosys_stdout_list
 
-def check_equivalence(batch_file_path: str, initial_code: str, ground_truth: str) -> bool:
+async def check_equivalence(batch_file_path: str, initial_code: str, ground_truth: str) -> bool:
     """
     Checks equivalence of two Verilog codes using Yosys.
     Returns True if equivalent, False otherwise.
     """
-    yosys_results = create_yosys_files(batch_file_path, initial_code, ground_truth)
+    yosys_results = await create_yosys_files(batch_file_path, initial_code, ground_truth)
     # If all return codes are 0, equivalence holds
     return all(code == 0 for code in yosys_results)
 

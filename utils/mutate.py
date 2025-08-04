@@ -9,6 +9,7 @@ from pathlib import Path
 from pyverilog.vparser.parser import VerilogCodeParser
 from pyverilog.ast_code_generator.codegen import ASTCodeGenerator
 from utils.hash_utils import hash_file, hash_string
+from utils.equivalence_check import rename_modules_and_instantiations
 
 # Import all the AST node classes we'll need for mutations
 from pyverilog.vparser.ast import (
@@ -475,6 +476,7 @@ def mutate(design: str, n: int, p: int) -> List[Dict[str, str]]:
     return mutants
 
 def standardize(verilog_code: str | Path) -> str:
+    verilog_code, _ = rename_modules_and_instantiations(verilog_code, obscure_names=True)
     ast = get_pyverilog_ast(verilog_code)
     output = ast_to_verilog(ast)
     return output

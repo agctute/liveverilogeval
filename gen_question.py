@@ -112,7 +112,7 @@ async def gen_question_bulk(designs: List[str]):
     return responses
 
 
-async def verify_question(question: str, design: str, n: int, k: int) -> Tuple[bool, List[str]]:
+async def verify_question(question: str, design: str, n: int, k: int, client: LLMClient) -> Tuple[bool, List[str]]:
     """
     Verifies a question by generating n modules and checking equivalence with the original design.
     
@@ -129,7 +129,8 @@ async def verify_question(question: str, design: str, n: int, k: int) -> Tuple[b
     # Load config for LLM client
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
-    client = LLMClient((config["calls_per_min"], 60), config["api_key"])
+    if not client:
+        client = LLMClient((config["calls_per_min"], 60), config["api_key"])
     
     # Generate n modules using the question - all at once
     prompt = RTL_GEN_PROMPT + question
@@ -141,6 +142,7 @@ async def verify_question(question: str, design: str, n: int, k: int) -> Tuple[b
         msgs.append(msg)
     
     # Generate all designs in parallel
+    print(f"Generating {n} candidate designs")
     tasks = [client.call_deepseek(msg) for msg in msgs]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
@@ -232,20 +234,42 @@ async def verify_question(question: str, design: str, n: int, k: int) -> Tuple[b
         design_content = next(d['content'] for d in valid_designs if d['hash'] == hash_val)
         selected_designs.append(design_content)
     
-    # Check equivalence for selected designs
+    # Check equivalence for selected designs in parallel
     batch_file_path = "./yosys_files/"
+    print(f"Checking {len(selected_designs)} designs for equivalence in parallel...")
+    
+    # Create tasks for all equivalence checks
+    equivalence_tasks = []
+    for i, design_content in enumerate(selected_designs):
+        task = check_equivalence(batch_file_path, design_content, design)
+        equivalence_tasks.append((i, task))
+    
+    # Run all equivalence checks in parallel
+    results = await asyncio.gather(*[task for _, task in equivalence_tasks], return_exceptions=True)
+    
+    # Process results
     equivalents = []
     non_equivalents = []
     equiv_flag = False
     
-    for i, design_content in enumerate(selected_designs):
-        print(f"Checking design {i+1}/{len(selected_designs)} (hash: {selected_hashes[i][:16]}...)")
-        is_equivalent = check_equivalence(batch_file_path, design_content, design)
+    for i, result in enumerate(results):
+        design_idx, _ = equivalence_tasks[i]
+        design_content = selected_designs[design_idx]
+        hash_val = selected_hashes[design_idx]
+        
+        if isinstance(result, Exception):
+            print(f"Error checking design {design_idx+1}/{len(selected_designs)} (hash: {hash_val[:16]}...): {result}")
+            non_equivalents.append(design_content)
+            continue
+            
+        is_equivalent = result
         if is_equivalent:
             equiv_flag = True
             equivalents.append(design_content)
+            print(f"✓ Design {design_idx+1}/{len(selected_designs)} (hash: {hash_val[:16]}...) is equivalent")
         else:
             non_equivalents.append(design_content)
+            print(f"✗ Design {design_idx+1}/{len(selected_designs)} (hash: {hash_val[:16]}...) is not equivalent")
     
     if equiv_flag:
         print(f"✓ Question verification successful - {len(equivalents)} design(s) are equivalent")

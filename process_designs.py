@@ -1,14 +1,22 @@
 """
-Script to process all .v files in rtllm_modules_pyverilog and add them to data/designs.jsonl
-with hash, equivalence_group, and content fields.
+Script to process all .v files from an existing dataset and restructure them into a JSONL file defined in config.yaml
+Ensures that all initial data is valid and follows properties outlined in the Database Object
 """
 import json
 import hashlib
+import yaml
 from pathlib import Path
 from utils.equivalence_check import yosys_sanity_check
 from utils.mutate import standardize
 
-batch_file_path = './yosys_files/'
+# Load configuration from config.yaml
+with open("config.yaml", "r") as config_file:
+    config = yaml.safe_load(config_file)
+
+batch_file_path = config['batch_dir_path']
+verilog_dir = Path(config['starting_verilog_dir']).absolute()
+
+
 def hash_file_content(content: str) -> str:
     """Generate SHA256 hash of file content."""
     return hashlib.sha256(content.encode('utf-8')).hexdigest()
@@ -17,14 +25,13 @@ def process_designs():
     """Process all .v files and create JSONL entries."""
     
     # Define paths
-    pyverilog_dir = Path("./rtllm_modules_pyverilog").absolute()
     output_file = Path("./data/designs.jsonl").absolute()
     
     # Ensure output directory exists
     output_file.parent.mkdir(exist_ok=True)
     
     # Get all .v files
-    v_files = list(pyverilog_dir.glob("*.v"))
+    v_files = list(verilog_dir.glob("*.v"))
     
     if not v_files:
         print("No .v files found in rtllm_modules_pyverilog directory")

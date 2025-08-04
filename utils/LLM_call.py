@@ -62,7 +62,7 @@ async def test():
     with open("config.yaml", 'r') as f:
         config = yaml.safe_load(f)
     # print(config["api_key"])
-    client = LLMClient((200,60), config["api_key"])
+    client = LLMClient((300,60), config["api_key"])
     test_msg = [{"role": "system", "content": "Hello"}]
     response, metadata = await client.call_deepseek(test_msg)
     print(response)
