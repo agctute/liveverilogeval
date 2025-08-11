@@ -4,13 +4,15 @@ import sys
 import io
 import random
 import copy
+import asyncio
+import yaml
 from typing import List, Dict
 from pathlib import Path
 from pyverilog.vparser.parser import VerilogCodeParser
 from pyverilog.ast_code_generator.codegen import ASTCodeGenerator
 from utils.hash_utils import hash_file, hash_string
 from utils.equivalence_check import rename_modules_and_instantiations
-
+from utils.LLM_call import LLMClient
 # Import all the AST node classes we'll need for mutations
 from pyverilog.vparser.ast import (
     # Operators
@@ -414,7 +416,194 @@ def missing_condition_mutant(ast, p=1):
     
     return mutated_ast
 
-def mutate(design: str, n: int, p: int) -> List[Dict[str, str]]:
+async def llm_mutate_design(design: str, n: int) -> List[Dict[str, str]]:
+    """
+    Generate mutants using LLM-based mutation.
+    
+    Args:
+        design: Verilog code as string or path to Verilog file
+        n: Number of mutants to generate
+    
+    Returns:
+        List of dictionaries, each containing:
+        - 'content': mutated Verilog code
+        - 'hash': SHA256 hash of the mutated code
+    """
+    # Load configuration
+    config_path = Path("config.yaml")
+    if not config_path.exists():
+        raise FileNotFoundError("config.yaml not found. Please ensure it exists with your API key.")
+    
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Initialize LLM client
+    client = LLMClient((config.get("calls_per_min", 200), 60), config["api_key"])
+    
+    # Create mutation prompt
+    mutation_prompt = f"""You are a Verilog bug injection expert. Your task is to create a subtly buggy version of the given Verilog design that will produce incorrect outputs in specific scenarios while maintaining correct behavior in most cases.
+
+Original Verilog Design:
+```verilog
+{design}
+```
+
+Create a mutated version that introduces a subtle bug by making one or more of the following creative alterations:
+
+**Design Logic Alterations:**
+- Change edge sensitivity (posedge/negedge) in always blocks
+- Modify reset conditions or reset values
+- Alter clock domain behavior or timing
+- Change data path logic while keeping the same interface
+- Introduce race conditions or timing issues
+- Modify state machine transitions or states
+- Change arithmetic/logic operations in subtle ways
+- Alter comparison logic or thresholds
+- Modify bit-width handling or truncation
+- Introduce off-by-one errors in counters or indices
+
+**Control Flow Alterations:**
+- Change conditional logic in if/else statements
+- Modify loop termination conditions
+- Alter case statement behavior
+- Change priority in nested conditions
+- Introduce missing or extra conditions
+
+**Data Handling Alterations:**
+- Change signal assignments (blocking vs non-blocking)
+- Modify data type conversions
+- Alter bit selection or concatenation
+- Change parameter values or constants
+- Modify array indexing or addressing
+
+**Timing and Synchronization Alterations:**
+- Remove or add synchronization logic
+- Change metastability handling
+- Modify clock gating or enable conditions
+- Alter pipeline stages or delays
+
+**Critical Guidelines:**
+- The bug should be subtle and not immediately obvious
+- Most outputs should remain the same as the original design
+- The bug should only manifest in specific input conditions or edge cases
+- Maintain the exact same module interface (inputs/outputs/parameters)
+- Ensure the code is syntactically correct Verilog
+- The design should still compile and simulate without errors
+- Focus on realistic bugs that could occur in real hardware designs
+- Avoid obvious syntax errors or completely broken logic
+
+**Examples of good bugs:**
+- Off-by-one error in a counter that only appears at boundary conditions
+- Wrong edge sensitivity that causes timing issues
+- Missing reset condition for a specific state
+- Incorrect comparison operator that fails in edge cases
+- Race condition in signal assignments
+- Wrong bit-width handling that causes overflow/underflow
+
+Return only the complete mutated Verilog module with the subtle bug introduced:"""
+
+    mutants = []
+    
+    async def generate_mutant():
+        try:
+            messages = [{"role": "system", "content": mutation_prompt}]
+            response, metadata = await client.call_deepseek(messages, temperature=0.8)
+            
+            # Extract Verilog code from response
+            # Look for code blocks marked with ```verilog or ```
+            lines = response.split('\n')
+            code_start = -1
+            code_end = -1
+            
+            for i, line in enumerate(lines):
+                if line.strip().startswith('```') and (code_start == -1):
+                    code_start = i + 1
+                elif line.strip().startswith('```') and (code_start != -1):
+                    code_end = i
+                    break
+            
+            if code_start != -1 and code_end != -1:
+                verilog_code = '\n'.join(lines[code_start:code_end])
+            else:
+                # If no code blocks found, try to extract the entire response
+                verilog_code = response.strip()
+
+            try:
+                verilog_code = standardize(verilog_code)
+                # Check if the generated code is significantly different from the original
+                original_hash = hash_string(design)
+                mutant_hash = hash_string(verilog_code)
+                
+                # Skip if it's identical to the original
+                if mutant_hash == original_hash:
+                    print(f"Generated mutant is identical to original design")
+                    return None
+                
+                # Check for duplicates with other mutants
+                for mut in mutants:
+                    if mutant_hash == mut['hash']:
+                        return None
+                
+                # Additional validation: ensure the code has some differences
+                # Count the number of lines that are different
+                # original_lines = design.strip().split('\n')
+                # mutant_lines = verilog_code.strip().split('\n')
+                
+                # Simple heuristic: if more than 90% of lines are identical, it might be too similar
+                # min_different_lines = max(1, len(original_lines) // 10)  # At least 10% should be different
+                # different_lines = sum(1 for i, (orig, mut) in enumerate(zip(original_lines, mutant_lines)) 
+                #                     if i < len(mutant_lines) and orig.strip() != mut.strip())
+                
+                # if different_lines < min_different_lines:
+                #     print(f"Generated mutant has too few differences ({different_lines} lines)")
+                #     return None
+                
+                return {
+                    'content': verilog_code,
+                    'hash': mutant_hash
+                }
+            except Exception as e:
+                print(f"Generated response doesn't appear to be valid Verilog code: {e}")
+                return None
+                
+        except Exception as e:
+            print(f"Error generating LLM mutant: {e}")
+            return None
+    
+    # Generate mutants asynchronously with retry mechanism
+    async def generate_all_mutants():
+        max_attempts = n * 3  # Try up to 3x the requested number to account for failures
+        attempts = 0
+        tasks = []
+        
+        while len(mutants) < n and attempts < max_attempts:
+            # Generate new tasks for remaining mutants needed
+            remaining = n - len(mutants)
+            new_tasks = [generate_mutant() for _ in range(remaining)]
+            tasks.extend(new_tasks)
+            attempts += remaining
+            
+            # Wait for current batch to complete
+            if tasks:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                tasks = []  # Clear completed tasks
+                
+                for result in results:
+                    if isinstance(result, dict):
+                        mutants.append(result)
+                        if len(mutants) >= n:
+                            break
+                    elif isinstance(result, Exception):
+                        print(f"Exception in mutant generation: {result}")
+        
+        print(f"Generated {len(mutants)} valid mutants after {attempts} attempts")
+    
+    # Run the async function
+    await generate_all_mutants()
+    
+    return mutants
+
+async def mutate(design: str, n: int, p: int, llm_based: bool = False) -> List[Dict[str, str]]:
     """
     Mutates a Verilog design n times, applying p mutations per iteration.
     
@@ -422,12 +611,15 @@ def mutate(design: str, n: int, p: int) -> List[Dict[str, str]]:
         design: Verilog code as string or path to Verilog file
         n: Number of mutants to generate
         p: Number of mutations to apply per mutant
-    
+        llm_based: If True, use an LLM to generate mutants instead of AST-based mutations.
     Returns:
         List of dictionaries, each containing:
-        - 'mutant': mutated Verilog code
+        - 'content': mutated Verilog code
         - 'hash': SHA256 hash of the mutated code
     """
+    if llm_based:
+        return await llm_mutate_design(design, n)
+    
     # Parse the original design
     ast = get_pyverilog_ast(design)
     
@@ -516,7 +708,7 @@ def test_get_pyverilog_ast():
                     error_count += 1
                     print(f"[{error_count}] Error parsing {verified_file}: {e}")
 
-def test_mutation():
+async def test_mutation():
     """Test the mutation function with a simple design."""
     test_design = """
 module test_module(
@@ -542,16 +734,57 @@ end
 endmodule
 """
     
-    print("Testing mutation function...")
-    mutants = mutate(test_design, 2, 8)
+    print("Testing AST-based mutation function...")
+    mutants = await mutate(test_design, 2, 8, llm_based=False)
     
-    print(f"Generated {len(mutants)} mutants:")
+    print(f"Generated {len(mutants)} AST-based mutants:")
     for i, mutant in enumerate(mutants):
         print(f"Mutant {i+1}:")
         print(f"Hash: {mutant['hash']}")
         print("Code:")
-        print(mutant['mutant'])
+        print(mutant['content'])
         print("-" * 50)
+
+async def test_llm_mutation():
+    """Test the LLM-based mutation function with a simple design."""
+    test_design = """
+module test_module(
+    input clk,
+    input rst,
+    input [7:0] a,
+    input [7:0] b,
+    output reg [7:0] result
+);
+
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        result <= 8'b0;
+    end else begin
+        if (a > b) begin
+            result <= a + b;
+        end else begin
+            result <= a - b;
+        end
+    end
+end
+
+endmodule
+"""
+    
+    print("Testing LLM-based mutation function...")
+    try:
+        mutants = await mutate(test_design, 2, 8, llm_based=True)
+        
+        print(f"Generated {len(mutants)} LLM-based mutants:")
+        for i, mutant in enumerate(mutants):
+            print(f"Mutant {i+1}:")
+            print(f"Hash: {mutant['hash']}")
+            print("Code:")
+            print(mutant['content'])
+            print("-" * 50)
+    except Exception as e:
+        print(f"Error testing LLM-based mutation: {e}")
+        print("Make sure config.yaml exists with a valid API key.")
 
 def compare_generated_and_original_hashes():
     """
@@ -603,12 +836,15 @@ def sanity_check_hash_file():
 
     print(f"\nSanity checked {total_count} files. {error_count} inconsistencies found.")
 
-
-
-
-if __name__ == "__main__":
+async def main():
+    """Main function to run tests."""
     # test_get_pyverilog_ast()
-    test_ast_to_verilog()
+    # test_ast_to_verilog()
     # compare_generated_and_original_hashes()
     # sanity_check_hash_file()
-    # test_mutation()
+    # await test_mutation()
+    # await test_llm_mutation()
+    pass
+
+if __name__ == "__main__":
+    asyncio.run(main())

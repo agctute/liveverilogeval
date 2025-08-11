@@ -36,7 +36,7 @@ def rename_modules_and_instantiations(verilog_code, obscure_names: bool = False)
 
     return verilog_code, rename_map
 
-def create_yosys_files(batch_file_path: str, initial_code: str, ground_truth: str):
+async def create_yosys_files(batch_file_path: str, initial_code: str, ground_truth: str):
     with open(batch_file_path + 'verilog_gen.v', 'w', encoding='utf-8') as f:
         f.write(initial_code)
     modified_module_golden, mod_module_list = rename_modules_and_instantiations(ground_truth)
@@ -57,32 +57,25 @@ def create_yosys_files(batch_file_path: str, initial_code: str, ground_truth: st
         with open(batch_file_path + 'equivalence_check.ys', 'w') as f:
             f.write(equivalence_string)
 
-
-        shell_command = f"stdbuf -o0 yosys -s {batch_file_path}equivalence_check.ys"
-        full_command = f"bash -i -c '{shell_command}'"
         try:
-            result = subprocess.run(
-                full_command,
-                shell=True,
-                # stdout=subprocess.PIPE,
-                # stderr=subprocess.PIPE,
-                capture_output=True,
-                text=True,
-                timeout=60
+            # Use asyncio.create_subprocess_exec for awaitable subprocess
+            process = await asyncio.create_subprocess_exec(
+                'bash', '-i', '-c', f"stdbuf -o0 yosys -s {batch_file_path}equivalence_check.ys",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
-            # print(result.returncode)
-            # print(result.stderr)
-            yosys_stdout_list.append(result.returncode)
-        except subprocess.TimeoutExpired as e:
-            yosys_stdout_list.append(0)
+            
+            # Wait for the process to complete with timeout
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
+                yosys_stdout_list.append(process.returncode)
+            except asyncio.TimeoutError:
+                process.terminate()
+                yosys_stdout_list.append(0)
+                
         except Exception as e:
-            # print(e)
-            # traceback.print_exc()
-            out = e.stdout
-            out = out.decode('utf-8')
-            # print(out)
-            yosys_stdout_list.append( -1)
-    # print(result.stderr)
+            yosys_stdout_list.append(-1)
+    
     return yosys_stdout_list
 
 async def check_equivalence(batch_file_path: str, initial_code: str, ground_truth: str) -> bool:

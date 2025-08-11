@@ -6,3 +6,5 @@ main_old.py
 data_temp
 rtllm_modules_pyverilog
 .DS_Store
+mutants
+yosys*

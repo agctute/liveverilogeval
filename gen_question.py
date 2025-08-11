@@ -166,7 +166,7 @@ async def verify_question(question: str, design: str, n: int, k: int, client: LL
     
     if not generated_designs:
         print("No designs were successfully generated")
-        return False, ""
+        return False, []
     
     # Standardize each design and compute hash
     new_designs = []
@@ -185,9 +185,7 @@ async def verify_question(question: str, design: str, n: int, k: int, client: LL
     valid_designs = [d for d in generated_designs if d['hash'] is not None]
     if not valid_designs:
         print("No valid designs after standardization")
-        return False, ""
-    
-    # Implement sophisticated design selection based on frequency
+        return False, []
     
     # Count the frequency of each hash
     hash_counts = Counter(design['hash'] for design in valid_designs)
@@ -197,42 +195,18 @@ async def verify_question(question: str, design: str, n: int, k: int, client: LL
     for hash_val, count in hash_counts.most_common():
         print(f"  - Hash {hash_val[:16]}... appears {count} time(s)")
     
-    # Select top k most frequent designs with random tie-breaking
+    # Check equivalence for every uniquely generated design
     unique_hashes = list(hash_counts.keys())
-    if len(unique_hashes) <= k:
-        # If we have k or fewer unique designs, check all of them
-        selected_hashes = unique_hashes
-        print(f"✓ Checking all {len(selected_hashes)} unique designs (≤ k={k})")
-    else:
-        # Get the top k most frequent hashes
-        most_common_hashes = hash_counts.most_common()
-        
-        # Find the frequency threshold for the k-th most frequent design
-        k_th_frequency = most_common_hashes[k-1][1]
-        
-        # Find all hashes that have the k_th_frequency (potential ties)
-        tied_hashes = [hash_val for hash_val, count in most_common_hashes if count == k_th_frequency]
-        
-        # Select hashes with frequency > k_th_frequency (guaranteed to be in top k)
-        selected_hashes = [hash_val for hash_val, count in most_common_hashes if count > k_th_frequency]
-        
-        # If we have ties at the k-th position, randomly select from tied hashes
-        if len(selected_hashes) < k:
-            remaining_slots = k - len(selected_hashes)
-            # Randomly select from tied hashes
-            random.shuffle(tied_hashes)
-            selected_hashes.extend(tied_hashes[:remaining_slots])
-        
-        print(f"✓ Selected top {len(selected_hashes)} most frequent designs (k={k})")
-        if len(tied_hashes) > 1:
-            print(f"  - Resolved tie at frequency {k_th_frequency} by random selection")
+    print(f"✓ Checking all {len(unique_hashes)} unique designs for equivalence")
     
-    # Get the actual design contents for selected hashes
+    # Get the actual design contents for all unique hashes
     selected_designs = []
-    for hash_val in selected_hashes:
+    selected_hashes = []
+    for hash_val in unique_hashes:
         # Get the first design with this hash
         design_content = next(d['content'] for d in valid_designs if d['hash'] == hash_val)
         selected_designs.append(design_content)
+        selected_hashes.append(hash_val)
     
     # Check equivalence for selected designs in parallel
     batch_file_path = "./yosys_files/"
@@ -267,6 +241,7 @@ async def verify_question(question: str, design: str, n: int, k: int, client: LL
             equiv_flag = True
             equivalents.append(design_content)
             print(f"✓ Design {design_idx+1}/{len(selected_designs)} (hash: {hash_val[:16]}...) is equivalent")
+            break
         else:
             non_equivalents.append(design_content)
             print(f"✗ Design {design_idx+1}/{len(selected_designs)} (hash: {hash_val[:16]}...) is not equivalent")
@@ -275,7 +250,7 @@ async def verify_question(question: str, design: str, n: int, k: int, client: LL
         print(f"✓ Question verification successful - {len(equivalents)} design(s) are equivalent")
         return True, equivalents
     else:
-        print(f"✗ Question verification failed - none of the top {k} designs are equivalent")
+        print(f"✗ Question verification failed - none of the {len(selected_designs)} unique designs are equivalent")
         return False, non_equivalents
     # except Exception as e:
     #     print(f"Error in verify_question: {e}")

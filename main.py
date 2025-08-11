@@ -37,7 +37,7 @@ async def process_design_with_mutants(db: Database, design_content: str, num_mut
     db.add_design(standardized_content, original_equiv_id)
     
     # Generate mutants
-    mutants = mutate(standardized_content, num_mutants, mutation_level)
+    mutants = await mutate(standardized_content, num_mutants, mutation_level)
     
     # Add mutants to database with their hash as equivalence group ID
     mutant_groups = []
@@ -228,12 +228,13 @@ async def main():
             db.add_question(question, set([equiv_id]))
         else:
             # Question verification failed - create new equivalence group for each non-equivalent design
-            new_ids = set()
-            for generated_design in generated_designs:
-                new_equiv_id = hash_string(generated_design)
-                db.add_design(generated_design, new_equiv_id)
-                new_ids.add(new_equiv_id)
-            db.add_question(question, new_ids)
+            # new_ids = set()
+            # for generated_design in generated_designs:
+            #     new_equiv_id = hash_string(generated_design)
+            #     db.add_design(generated_design, new_equiv_id)
+            #     new_ids.add(new_equiv_id)
+            # db.add_question(question, new_ids)
+            pass
 
     # Create output directory
     Path("data_temp").mkdir(exist_ok=True)
@@ -250,6 +251,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
-
-
