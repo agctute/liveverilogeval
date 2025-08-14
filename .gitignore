@@ -1,5 +1,5 @@
 config.yaml
-yosys_files/
+yosys_files/*
 tests/
 __*__
 main_old.py
@@ -7,3 +7,6 @@ data_temp
 rtllm_modules_pyverilog
 .DS_Store
 mutants
+parsetab.py
+data/valid_questions.jsonl
+logs/generator_debug.log

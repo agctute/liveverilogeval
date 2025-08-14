@@ -869,3 +869,196 @@ module dut
 [2025-08-11 20:34:57] [INFO] Generated 2 valid answers, checking equivalence...
 [2025-08-11 20:34:57] [INFO] Running 2 equivalence checks in parallel...
 [2025-08-11 20:34:57] [INFO] Question validation failed. No equivalent answers found.
+[2025-08-13 19:14:17] [INFO] ==================================================
+[2025-08-13 19:14:17] [INFO] LLM API CALL
+[2025-08-13 19:14:17] [INFO] Messages: [{'role': 'system', 'content': 'You are an expert hardware interview question writer. You craft clear,\nconcise, LeetCode-style problem statements about designing RTL modules.\nOnly output the problem statement; do not include any solution code.'}, {'role': 'user', 'content': 'Create a LeetCode-style question whose unique correct answer is the\nfollowing Verilog module. The question should:\n- Clearly describe the required behavior, I/O interface, and any timing/edge conditions.\n- Avoid revealing implementation details or providing code.\n- Be self-contained and unambiguous.\n- Fit within 150-300 words.\n\nReturn ONLY the question text between the exact markers below.\nQUESTION BEGIN\n<write the problem statement here>\nQUESTION END\n\nTarget Verilog module (ground-truth answer):\n----- BEGIN VERILOG -----\n\n\nmodule dut\n(\n  output reg clk\n);\n\n  parameter PERIOD = 10;\n\n  initial begin\n    clk = 0;\n  end\n\n\n  always @(*) begin\n    #(PERIOD / 2) clk = ~clk;\n  end\n\n\nendmodule\n\n\n----- END VERILOG -----\n'}]
+[2025-08-13 19:14:17] [INFO] Response: QUESTION BEGIN
+# Clock Generator Module
+
+Design a Verilog module that generates a continuous clock signal with a configurable period. The module should meet the following specifications:
+
+## Interface
+- Output: `clk` (1-bit register) - The generated clock signal
+
+## Parameters
+- `PERIOD` (default 10 time units) - The total period of the clock signal (both high and low phases)
+
+## Requirements
+1. The clock should start low (0) when simulation begins
+2. The clock should toggle its value every half period (PERIOD/2)
+3. The toggling should continue indefinitely
+4. The clock transitions should be precise with respect to the specified period
+
+## Notes
+- Use time units consistently (don't mix ns/ps/etc)
+- The solution should not depend on any external signals or clocks
+- The module should be self-contained and not require any input signals
+
+Write a Verilog module that meets these specifications exactly.
+QUESTION END
+[2025-08-13 19:14:17] [INFO] Metadata: {'messages': [{'role': 'system', 'content': 'You are an expert hardware interview question writer. You craft clear,\nconcise, LeetCode-style problem statements about designing RTL modules.\nOnly output the problem statement; do not include any solution code.'}, {'role': 'user', 'content': 'Create a LeetCode-style question whose unique correct answer is the\nfollowing Verilog module. The question should:\n- Clearly describe the required behavior, I/O interface, and any timing/edge conditions.\n- Avoid revealing implementation details or providing code.\n- Be self-contained and unambiguous.\n- Fit within 150-300 words.\n\nReturn ONLY the question text between the exact markers below.\nQUESTION BEGIN\n<write the problem statement here>\nQUESTION END\n\nTarget Verilog module (ground-truth answer):\n----- BEGIN VERILOG -----\n\n\nmodule dut\n(\n  output reg clk\n);\n\n  parameter PERIOD = 10;\n\n  initial begin\n    clk = 0;\n  end\n\n\n  always @(*) begin\n    #(PERIOD / 2) clk = ~clk;\n  end\n\n\nendmodule\n\n\n----- END VERILOG -----\n'}], 'call_time': 1755137640.10833, 'execution_time': 17.756253957748413, 'system_fingerprint': 'fp_8802369eaa_prod0623_fp8_kvcache', 'model': 'deepseek-chat', 'usage': {'completion_tokens': 200, 'prompt_tokens': 217, 'total_tokens': 417}}
+[2025-08-13 19:14:17] [INFO] ==================================================
+[2025-08-13 19:14:17] [INFO] Generated question: # Clock Generator Module
+
+Design a Verilog module that generates a continuous clock signal with a co...
+[2025-08-13 19:14:17] [INFO] Starting question validation...
+[2025-08-13 19:14:17] [INFO] Generating 2 candidate answers...
+[2025-08-13 19:14:20] [INFO] ==================================================
+[2025-08-13 19:14:20] [INFO] LLM API CALL
+[2025-08-13 19:14:20] [INFO] Messages: [{'role': 'system', 'content': 'You are an expert hardware interview question writer. You craft clear,\nconcise, LeetCode-style problem statements about designing RTL modules.\nOnly output the problem statement; do not include any solution code.'}, {'role': 'user', 'content': "Create a LeetCode-style question whose unique correct answer is the\nfollowing Verilog module. The question should:\n- Clearly describe the required behavior, I/O interface, and any timing/edge conditions.\n- Avoid revealing implementation details or providing code.\n- Be self-contained and unambiguous.\n- Fit within 150-300 words.\n\nReturn ONLY the question text between the exact markers below.\nQUESTION BEGIN\n<write the problem statement here>\nQUESTION END\n\nTarget Verilog module (ground-truth answer):\n----- BEGIN VERILOG -----\n\n\nmodule dut\n(\n  input [2:0] A,\n  input [2:0] B,\n  output A_greater,\n  output A_equal,\n  output A_less\n);\n\n  assign A_greater = (A > B)? 1'b1 : 1'b0;\n  assign A_equal = (A == B)? 1'b1 : 1'b0;\n  assign A_less = (A < B)? 1'b1 : 1'b0;\n\nendmodule\n\n\n----- END VERILOG -----\n"}]
+[2025-08-13 19:14:20] [INFO] Response: QUESTION BEGIN
+Design a Verilog module that compares two 3-bit unsigned numbers and outputs three status signals indicating their relative magnitude. 
+
+The module should have:
+- Two 3-bit unsigned inputs: A and B
+- Three 1-bit outputs:
+  * A_greater: high when A > B
+  * A_equal: high when A == B
+  * A_less: high when A < B
+
+All outputs should be combinational (continuously assigned) and update immediately when either input changes. The comparison should treat all inputs as unsigned binary numbers.
+
+For example:
+- If A = 3'b101 (5) and B = 3'b011 (3), then:
+  A_greater = 1, A_equal = 0, A_less = 0
+- If A = 3'b010 (2) and B = 3'b010 (2), then:
+  A_greater = 0, A_equal = 1, A_less = 0
+- If A = 3'b001 (1) and B = 3'b100 (4), then:
+  A_greater = 0, A_equal = 0, A_less = 1
+
+The module should be purely combinational with no clock or reset inputs.
+QUESTION END
+[2025-08-13 19:14:20] [INFO] Metadata: {'messages': [{'role': 'system', 'content': 'You are an expert hardware interview question writer. You craft clear,\nconcise, LeetCode-style problem statements about designing RTL modules.\nOnly output the problem statement; do not include any solution code.'}, {'role': 'user', 'content': "Create a LeetCode-style question whose unique correct answer is the\nfollowing Verilog module. The question should:\n- Clearly describe the required behavior, I/O interface, and any timing/edge conditions.\n- Avoid revealing implementation details or providing code.\n- Be self-contained and unambiguous.\n- Fit within 150-300 words.\n\nReturn ONLY the question text between the exact markers below.\nQUESTION BEGIN\n<write the problem statement here>\nQUESTION END\n\nTarget Verilog module (ground-truth answer):\n----- BEGIN VERILOG -----\n\n\nmodule dut\n(\n  input [2:0] A,\n  input [2:0] B,\n  output A_greater,\n  output A_equal,\n  output A_less\n);\n\n  assign A_greater = (A > B)? 1'b1 : 1'b0;\n  assign A_equal = (A == B)? 1'b1 : 1'b0;\n  assign A_less = (A < B)? 1'b1 : 1'b0;\n\nendmodule\n\n\n----- END VERILOG -----\n"}], 'call_time': 1755137641.1113951, 'execution_time': 19.27865695953369, 'system_fingerprint': 'fp_8802369eaa_prod0623_fp8_kvcache', 'model': 'deepseek-chat', 'usage': {'completion_tokens': 271, 'prompt_tokens': 263, 'total_tokens': 534}}
+[2025-08-13 19:14:20] [INFO] ==================================================
+[2025-08-13 19:14:20] [INFO] Generated question: Design a Verilog module that compares two 3-bit unsigned numbers and outputs three status signals in...
+[2025-08-13 19:14:20] [INFO] Starting question validation...
+[2025-08-13 19:14:20] [INFO] Generating 2 candidate answers...
+[2025-08-13 19:14:25] [INFO] Generated answer 1: ```verilog
+module clock_generator #(parameter PERIOD = 10) (
+    output reg clk = 0
+);
+    
+    init...
+[2025-08-13 19:14:26] [ERROR] Error standardizing answer 1:  line:2: before: "="
+[2025-08-13 19:14:26] [INFO] Generated answer 2: ```verilog
+module clock_generator #(parameter PERIOD = 10) (
+    output reg clk = 0
+);
+    
+    init...
+[2025-08-13 19:14:26] [ERROR] Error standardizing answer 2:  line:2: before: "="
+[2025-08-13 19:14:26] [INFO] Generated 2 valid answers out of 2 attempts
+[2025-08-13 19:14:26] [INFO] Generated 2 valid answers, checking equivalence...
+[2025-08-13 19:14:26] [INFO] Running 2 equivalence checks in parallel...
+[2025-08-13 19:14:26] [INFO] Question validation failed. No equivalent answers found.
+[2025-08-13 19:14:28] [INFO] Generated answer 1: ```verilog
+module magnitude_comparator (
+    input [2:0] A,
+    input [2:0] B,
+    output A_greater,...
+[2025-08-13 19:14:29] [INFO] Standardized answer 1: 
+
+module dut
+(
+  input [2:0] A,
+  input [2:0] B,
+  output A_greater,
+  output A_equal,
+  output A_le...
+[2025-08-13 19:14:29] [INFO] Generated answer 2: ```verilog
+module magnitude_comparator (
+    input [2:0] A,
+    input [2:0] B,
+    output A_greater,...
+[2025-08-13 19:14:29] [INFO] Standardized answer 2: 
+
+module dut
+(
+  input [2:0] A,
+  input [2:0] B,
+  output A_greater,
+  output A_equal,
+  output A_le...
+[2025-08-13 19:14:29] [INFO] Generated 2 valid answers out of 2 attempts
+[2025-08-13 19:14:29] [INFO] Generated 2 valid answers, checking equivalence...
+[2025-08-13 19:14:29] [INFO] Running 2 equivalence checks in parallel...
+[2025-08-13 19:14:29] [INFO] Question validation failed. No equivalent answers found.
+[2025-08-13 19:14:35] [INFO] ==================================================
+[2025-08-13 19:14:35] [INFO] LLM API CALL
+[2025-08-13 19:14:35] [INFO] Messages: [{'role': 'system', 'content': 'You are an expert hardware interview question writer. You craft clear,\nconcise, LeetCode-style problem statements about designing RTL modules.\nOnly output the problem statement; do not include any solution code.'}, {'role': 'user', 'content': 'Create a LeetCode-style question whose unique correct answer is the\nfollowing Verilog module. The question should:\n- Clearly describe the required behavior, I/O interface, and any timing/edge conditions.\n- Avoid revealing implementation details or providing code.\n- Be self-contained and unambiguous.\n- Fit within 150-300 words.\n\nReturn ONLY the question text between the exact markers below.\nQUESTION BEGIN\n<write the problem statement here>\nQUESTION END\n\nTarget Verilog module (ground-truth answer):\n----- BEGIN VERILOG -----\n\n\nmodule dut\n(\n  clk,\n  q,\n  d\n);\n\n  input clk;\n  input d;\n  output [7:0] q;\n  reg [7:0] q;\n\n  initial q = 0;\n\n\n  always @(posedge clk) begin\n    q <= q >> 1;\n    q[7] <= d;\n  end\n\n\nendmodule\n\n\n----- END VERILOG -----\n'}]
+[2025-08-13 19:14:35] [INFO] Response: QUESTION BEGIN
+Design a Verilog module that implements an 8-bit shift register with serial input and parallel output. The module should have the following interface and behavior:
+
+Inputs:
+- clk: Clock signal (positive edge triggered)
+- d: Serial data input (1-bit)
+
+Outputs:
+- q: 8-bit parallel output
+
+Functionality:
+1. On every positive clock edge, the register should perform a right shift operation (LSB is discarded)
+2. The current value of input 'd' should be loaded into the MSB (bit 7) of the register
+3. The register should initialize to all zeros (0x00) when simulation begins
+
+Timing Requirements:
+- All operations must be synchronous to the positive edge of the clock
+- Output 'q' must be updated on the clock edge (use non-blocking assignment)
+
+Example Operation:
+Initial state: q = 8'b00000000
+After 1st clock with d=1: q = 8'b10000000
+After 2nd clock with d=0: q = 8'b01000000
+After 3rd clock with d=1: q = 8'b10100000
+
+Do not use any asynchronous resets or preset signals.
+QUESTION END
+[2025-08-13 19:14:35] [INFO] Metadata: {'messages': [{'role': 'system', 'content': 'You are an expert hardware interview question writer. You craft clear,\nconcise, LeetCode-style problem statements about designing RTL modules.\nOnly output the problem statement; do not include any solution code.'}, {'role': 'user', 'content': 'Create a LeetCode-style question whose unique correct answer is the\nfollowing Verilog module. The question should:\n- Clearly describe the required behavior, I/O interface, and any timing/edge conditions.\n- Avoid revealing implementation details or providing code.\n- Be self-contained and unambiguous.\n- Fit within 150-300 words.\n\nReturn ONLY the question text between the exact markers below.\nQUESTION BEGIN\n<write the problem statement here>\nQUESTION END\n\nTarget Verilog module (ground-truth answer):\n----- BEGIN VERILOG -----\n\n\nmodule dut\n(\n  clk,\n  q,\n  d\n);\n\n  input clk;\n  input d;\n  output [7:0] q;\n  reg [7:0] q;\n\n  initial q = 0;\n\n\n  always @(posedge clk) begin\n    q <= q >> 1;\n    q[7] <= d;\n  end\n\n\nendmodule\n\n\n----- END VERILOG -----\n'}], 'call_time': 1755137642.1099598, 'execution_time': 33.063990116119385, 'system_fingerprint': 'fp_8802369eaa_prod0623_fp8_kvcache', 'model': 'deepseek-chat', 'usage': {'completion_tokens': 260, 'prompt_tokens': 238, 'total_tokens': 498}}
+[2025-08-13 19:14:35] [INFO] ==================================================
+[2025-08-13 19:14:35] [INFO] Generated question: Design a Verilog module that implements an 8-bit shift register with serial input and parallel outpu...
+[2025-08-13 19:14:35] [INFO] Starting question validation...
+[2025-08-13 19:14:35] [INFO] Generating 2 candidate answers...
+[2025-08-13 19:14:44] [INFO] Generated answer 1: ```verilog
+module shift_register (
+    input clk,
+    input d,
+    output reg [7:0] q
+);
+
+    always...
+[2025-08-13 19:14:44] [INFO] Standardized answer 1: 
+
+module dut
+(
+  input clk,
+  input d,
+  output reg [7:0] q
+);
+
+
+  always @(posedge clk) begin
+    q...
+[2025-08-13 19:14:44] [INFO] Generated answer 2: ```verilog
+module shift_register (
+    input clk,
+    input d,
+    output reg [7:0] q
+);
+
+    always...
+[2025-08-13 19:14:45] [INFO] Standardized answer 2: 
+
+module dut
+(
+  input clk,
+  input d,
+  output reg [7:0] q
+);
+
+
+  always @(posedge clk) begin
+    q...
+[2025-08-13 19:14:45] [INFO] Generated 2 valid answers out of 2 attempts
+[2025-08-13 19:14:45] [INFO] Generated 2 valid answers, checking equivalence...
+[2025-08-13 19:14:45] [INFO] Running 2 equivalence checks in parallel...
+[2025-08-13 19:14:45] [INFO] Question validation failed. No equivalent answers found.
