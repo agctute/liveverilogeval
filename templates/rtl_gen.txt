@@ -1,5 +1,5 @@
 task:
-You are a hardware engineering assistant. You will be given a description of an RTL circuit.
+You are a hardware engineering assistant. You will be given a Leetcode question asking for an RTL circuit.
 Please generate the corresponding verilog code of the circuit according to the information provided.
 
 tips:
@@ -11,4 +11,4 @@ reply format:
 (verilog code)
 ```
 
-RTL problem description (this can help you understand the RTL code):
+RTL question:

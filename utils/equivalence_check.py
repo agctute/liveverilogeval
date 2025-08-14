@@ -36,45 +36,70 @@ def rename_modules_and_instantiations(verilog_code, obscure_names: bool = False)
 
     return verilog_code, rename_map
 
-async def create_yosys_files(batch_file_path: str, initial_code: str, ground_truth: str):
-    with open(batch_file_path + 'verilog_gen.v', 'w', encoding='utf-8') as f:
+async def create_yosys_files(batch_file_path: str, initial_code: str, ground_truth: str, instance_id: str = None):
+    # Generate unique file paths for each parallel instance
+    if instance_id is None:
+        # Use task ID or a random string to ensure uniqueness
+        import uuid
+        instance_id = str(uuid.uuid4())[:8]
+    
+    verilog_gen_path = Path(batch_file_path) / f"verilog_gen_{instance_id}.v"
+    verilog_truth_path = Path(batch_file_path) / f"verilog_truth_{instance_id}.v"
+    yosys_script_path = Path(batch_file_path) / f"equivalence_check_{instance_id}.ys"
+    
+    with open(verilog_gen_path, 'w', encoding='utf-8') as f:
         f.write(initial_code)
     modified_module_golden, mod_module_list = rename_modules_and_instantiations(ground_truth)
-    with open(batch_file_path + 'verilog_truth.v', 'w', encoding='utf-8') as f:
+    with open(verilog_truth_path, 'w', encoding='utf-8') as f:
         f.write(modified_module_golden)
     yosys_stdout_list = []
     for original_module_name in mod_module_list:
         module_name = mod_module_list[original_module_name]
         equivalence_string = f"""
-        read_verilog {batch_file_path}verilog_truth.v
-        read_verilog {batch_file_path}verilog_gen.v
+        read_verilog {verilog_truth_path}
+        read_verilog {verilog_gen_path}
         prep; proc; opt; memory;
         clk2fflogic;
         miter -equiv -flatten {module_name} {original_module_name} miter
         sat -seq 20 -verify -prove trigger 0 -show-inputs -show-outputs -set-init-zero miter
         """
 
-        with open(batch_file_path + 'equivalence_check.ys', 'w') as f:
+        with open(yosys_script_path, 'w') as f:
             f.write(equivalence_string)
 
         try:
             # Use asyncio.create_subprocess_exec for awaitable subprocess
+            # Remove -i flag to prevent TTY input issues
+            print(f"yosys -s {yosys_script_path}")
             process = await asyncio.create_subprocess_exec(
-                'bash', '-i', '-c', f"stdbuf -o0 yosys -s {batch_file_path}equivalence_check.ys",
+                'bash', '-c', f"yosys -s {yosys_script_path}",
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.DEVNULL  # Prevent TTY input
             )
             
-            # Wait for the process to complete with timeout
             try:
                 stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
+                print(stdout)
+                print(stderr)
                 yosys_stdout_list.append(process.returncode)
             except asyncio.TimeoutError:
                 process.terminate()
                 yosys_stdout_list.append(0)
-                
         except Exception as e:
+            print(f"Error running yosys: {e}")
             yosys_stdout_list.append(-1)
+        
+    # Cleanup temporary files
+    try:
+        if verilog_gen_path.exists():
+            verilog_gen_path.unlink()
+        if verilog_truth_path.exists():
+            verilog_truth_path.unlink()
+        if yosys_script_path.exists():
+            yosys_script_path.unlink()
+    except Exception as e:
+        print(f"Warning: Could not cleanup temporary files: {e}")
     
     return yosys_stdout_list
 
@@ -83,14 +108,18 @@ async def check_equivalence(batch_file_path: str, initial_code: str, ground_trut
     Checks equivalence of two Verilog codes using Yosys.
     Returns True if equivalent, False otherwise.
     """
-    yosys_results = await create_yosys_files(batch_file_path, initial_code, ground_truth)
+    # Generate unique instance ID for this equivalence check
+    import uuid
+    instance_id = str(uuid.uuid4())[:8]
+    
+    yosys_results = await create_yosys_files(batch_file_path, initial_code, ground_truth, instance_id)
     # If all return codes are 0, equivalence holds
     return all(code == 0 for code in yosys_results)
 
-def yosys_sanity_check(batch_file_path: str, code: str) -> bool:
-    return check_equivalence(batch_file_path, code, code)
+async def yosys_sanity_check(batch_file_path: str, code: str) -> bool:
+    return await check_equivalence(batch_file_path, code, code)
 
-def test_check_equivalence():
+async def test_check_equivalence():
     """
     Test equivalence checking by comparing each verified file with itself.
     This should always return True (equivalent) for all files.
@@ -122,7 +151,7 @@ def test_check_equivalence():
                         original_code = f.read()
                     
                     # Compare the file with itself
-                    is_equivalent = check_equivalence(
+                    is_equivalent = await check_equivalence(
                         str(batch_file_path) + "/",
                         original_code,
                         original_code
@@ -154,7 +183,7 @@ def test_check_equivalence():
     
     return equivalent_count == total_count
 
-def test_check_equivalence_single(design: Path):
+async def test_check_equivalence_single(design: Path):
     batch_file_path = Path("./yosys_files/")
     batch_file_path.mkdir(exist_ok=True)
     yosys_location = "/usr/local/bin/yosys"  # Default location, may need adjustment
@@ -169,7 +198,7 @@ def test_check_equivalence_single(design: Path):
             with open(verified_file, 'r') as f:
                 original_code = f.read()
 
-            is_equivalent = check_equivalence(
+            is_equivalent = await check_equivalence(
                 str(batch_file_path) + "/",
                 original_code,
                 original_code

@@ -6,6 +6,16 @@ import yaml
 from pathlib import Path
 from asynciolimiter import Limiter
 
+
+def extract_between_markers(text: str, begin_marker: str, end_marker: str) -> str:
+    start_idx = text.find(begin_marker)
+    if start_idx == -1:
+        return text.strip()
+    start_idx += len(begin_marker)
+    text = text[start_idx:]
+    end_idx = text.find(end_marker)
+    return text[:end_idx].strip()
+
 class LLMClient:
     """Client class for interacting with LLMs
         Args:

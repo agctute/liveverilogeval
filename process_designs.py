@@ -21,7 +21,7 @@ def hash_file_content(content: str) -> str:
     """Generate SHA256 hash of file content."""
     return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
-def process_designs():
+async def process_designs(debug_enabled: bool = False, debug_log_file: str = "./logs/process_designs_debug.log"):
     """Process all .v files and create JSONL entries."""
     
     # Define paths
@@ -50,7 +50,7 @@ def process_designs():
             with open(v_file, 'r', encoding='utf-8') as f:
                 content = f.read()
             content = standardize(content)
-            sane_flag = yosys_sanity_check(batch_file_path, content)
+            sane_flag = await yosys_sanity_check(batch_file_path, content)
             if not sane_flag:
                 raise ValueError("Failed sanity check")
             # Generate hash
@@ -127,7 +127,8 @@ if __name__ == "__main__":
     print("Processing .v files and creating JSONL entries...")
     print("=" * 60)
     
-    process_designs()
+    import asyncio
+    asyncio.run(process_designs())
     
     print("\n" + "=" * 60)
     print("Verifying generated JSONL file...")

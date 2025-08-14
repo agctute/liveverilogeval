@@ -10,6 +10,7 @@ from collections import Counter
 from utils.mutate import standardize
 from utils.hash_utils import hash_string
 from utils.equivalence_check import check_equivalence
+from utils.generators import create_generators
 
 # Import RTL_GEN_PROMPT from variant_gen.py
 RTL_GEN_PROMPT = open('./templates/rtl_gen.txt', 'r').read()
@@ -37,32 +38,26 @@ def extract_question(passage: str):
 
 def extract_code(content: str) -> str:
     """
-    Extracts code from a response by looking for ```verilog blocks.
-    
-    Args:
-        content (str): The response content containing code blocks.
-        
-    Returns:
-        str: The extracted code, or the original content if no code blocks found.
+    Extract code from a response by looking for fenced blocks (``` or ---).
+    If no block is found, return the original content.
     """
-    start = False
-    lines = content.split('\n')
-    started = False
-    res = []
+    inside = False
+    lines = content.split("\n")
+    collected: List[str] = []
+    saw_block = False
     for line in lines:
-        if line.strip().startswith("```") or line.strip().startswith("---"):
-            start = not start
-        elif start:
-            started = True
-            res.append(line)
-
-    if not started:
-        # If no code blocks found, return the original content
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("---"):
+            inside = not inside
+            saw_block = True
+            continue
+        if inside:
+            collected.append(line)
+    if not saw_block:
         return content
-    out = "\n".join(res)
-    return out
+    return "\n".join(collected)
 
-async def gen_question(design: str):
+async def gen_question(design: str, debug_enabled: bool = False, debug_log_file: str = "./logs/generator_debug.log"):
     # Load the prompt from gen_q.json
     with open("prompts/gen_q.json", "r") as f:
         prompt_data = json.load(f)
@@ -77,9 +72,9 @@ async def gen_question(design: str):
     client = LLMClient((config["calls_per_min"], 60), config["api_key"])
     response, metadata = await client.call_deepseek(msg)
     question = extract_question(response)
-    return question 
+    return question
 
-async def gen_question_bulk(designs: List[str]):
+async def gen_question_bulk(designs: List[str], debug_enabled: bool = False, debug_log_file: str = "./logs/generator_debug.log"):
     """
     Generates questions for a list of design strings.
 
@@ -112,7 +107,7 @@ async def gen_question_bulk(designs: List[str]):
     return responses
 
 
-async def verify_question(question: str, design: str, n: int, k: int, client: LLMClient) -> Tuple[bool, List[str]]:
+async def verify_question(question: str, design: str, n: int, k: int, client: LLMClient, debug_enabled: bool = False, debug_log_file: str = "./logs/generator_debug.log") -> Tuple[bool, List[str]]:
     """
     Verifies a question by generating n modules and checking equivalence with the original design.
     
@@ -121,6 +116,9 @@ async def verify_question(question: str, design: str, n: int, k: int, client: LL
         design: The original design string
         n: Number of modules to generate
         k: Number of top most frequent designs to check for equivalence
+        client: LLM client for API calls
+        debug_enabled: Whether to enable debug logging
+        debug_log_file: Path to debug log file
         
     Returns:
         tuple: (True/False for equivalence, List of designs that are/are not equivalent)
@@ -212,10 +210,17 @@ async def verify_question(question: str, design: str, n: int, k: int, client: LL
     batch_file_path = "./yosys_files/"
     print(f"Checking {len(selected_designs)} designs for equivalence in parallel...")
     
+    # Limit concurrent Yosys processes to prevent resource exhaustion
+    semaphore = asyncio.Semaphore(4)  # Max 4 parallel Yosys instances
+    
+    async def check_with_semaphore(design_content, design):
+        async with semaphore:
+            return await check_equivalence(batch_file_path, design_content, design)
+    
     # Create tasks for all equivalence checks
     equivalence_tasks = []
     for i, design_content in enumerate(selected_designs):
-        task = check_equivalence(batch_file_path, design_content, design)
+        task = check_with_semaphore(design_content, design)
         equivalence_tasks.append((i, task))
     
     # Run all equivalence checks in parallel
@@ -252,9 +257,6 @@ async def verify_question(question: str, design: str, n: int, k: int, client: LL
     else:
         print(f"✗ Question verification failed - none of the {len(selected_designs)} unique designs are equivalent")
         return False, non_equivalents
-    # except Exception as e:
-    #     print(f"Error in verify_question: {e}")
-    #     return False, ""
 
 if __name__ == "__main__":
     # Run the test
