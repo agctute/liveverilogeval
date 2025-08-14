@@ -38,7 +38,7 @@ async def val_single_design(verilog_code: str, client: LLMClient, debug_enabled:
     qg, ag, vqg = create_generators(
         design_entry=design_entry,
         client=client,
-        n_answers=2,
+        n_answers=5,
         max_concurrent_yosys=4,
         debug_enabled=debug_enabled,
         debug_log_file=debug_log_file
