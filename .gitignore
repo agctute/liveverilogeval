@@ -10,3 +10,4 @@ mutants
 parsetab.py
 data/valid_questions.jsonl
 logs/generator_debug.log
+logs/generator_debug.log

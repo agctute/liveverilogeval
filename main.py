@@ -18,13 +18,13 @@ async def run():
     debug_enabled = True
     debug_log_file = "./logs/generator_debug.log"
 
-    tests = [13, 14, 34]
     tasks = [
-        val_single_design(data[t]["content"], client, debug_enabled, debug_log_file) for t in tests
+        val_single_design(design["content"], client, debug_enabled, debug_log_file) for design in data
     ]
     print(f"Validating {len(tasks)} designs")
     results = await asyncio.gather(*tasks)
-    print(f"Validated {len(results)} designs")
+    num_valid = sum(1 for r in results if r.get("is_valid"))
+    print(f"Validated {len(results)} designs ({num_valid}/{len(results)} successful")
 
     with open("./data/valid_questions.jsonl", "w") as f:
         for result in results:

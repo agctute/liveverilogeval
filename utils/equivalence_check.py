@@ -19,7 +19,7 @@ def rename_modules_and_instantiations(verilog_code, obscure_names: bool = False)
             else:
                 rename_map[module_names[i]] = 'dut_dependency_' + str(i+1)
     else:
-        rename_map = {name: '1_' + name for name in module_names}
+        rename_map = {name: 'dut_' + name for name in module_names}
     
     # Step 3: Replace module declarations
     def replace_module_decl(match):
@@ -80,8 +80,8 @@ async def create_yosys_files(batch_file_path: str, initial_code: str, ground_tru
             
             try:
                 stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
-                print(stdout)
-                print(stderr)
+                # print(stdout)
+                # print(stderr)
                 yosys_stdout_list.append(process.returncode)
             except asyncio.TimeoutError:
                 process.terminate()
