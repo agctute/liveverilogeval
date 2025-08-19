@@ -5,6 +5,9 @@ import time
 import yaml
 from pathlib import Path
 from asynciolimiter import Limiter
+import anthropic
+from google import genai
+from utils.config import Config
 
 
 def extract_between_markers(text: str, begin_marker: str, end_marker: str) -> str:
@@ -20,25 +23,76 @@ class LLMClient:
     """Client class for interacting with LLMs
         Args:
         limiter_params - rate limiter settings (# of calls / # of seconds)
-        log_path - path of output logs
+        config - Config object containing API keys and other configuration
     """
-    def __init__(self, limiter_params: Tuple[int, int], api_key: str) -> None:
+    def __init__(self, limiter_params: Tuple[int, int], config: Config) -> None:
         """Init class
 
         Args:
         limiter_params - rate limiter settings (# of calls / # of seconds)
-        log_path - path of output logs
+        config - Config object containing API keys and other configuration
         """
         self.limiter = Limiter(limiter_params[0]/limiter_params[1])
-        self.deepseek_client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        self.deepseek_client = OpenAI(api_key=config.deepseek_api_key, base_url="https://api.deepseek.com")
+        self.claude_client = anthropic.Anthropic(api_key=config.claude_api_key)
+        self.claude_models = [model_id.id for model_id in self.claude_client.models.list(limit=20)]
+        self.gemini_client = genai.Client(api_key=config.gemini_api_key)
+        self.gemini_models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.5-flash-lite"]
 
-    def llm_call(self, msgs: List[Dict[str, str]], model: str="deepseek") -> None:
-        """Generate something w/ an LLM
-        
-        Args:
-        msgs - what to input to the LLM (Ex: [{'system': 'Hello World!'}])
+    async def call(self, msg: str, model: str="deepseek", model_id: str="") -> None:
+        if model == "deepseek":
+            messages = [{"role": "user", "content": msg}]
+            return await self.call_deepseek(messages, model_id)
+        elif model == "claude":
+            messages = [{"role": "user", "content": msg}]
+            return await self.call_claude(messages, model_id)
+        elif model == "gemini":
+            return await self.call_gemini(msg, model_id)
+        else:
+            raise ValueError(f"Invalid model: {model}, valid models: deepseek, claude, gemini")
+
+    async def call_claude(self, msgs: str, model_id: str=""):
+        """Generate something w/ Claude
         """
-        pass
+        if model_id and model_id not in self.claude_models:
+            raise ValueError(f"Invalid model ID: {model_id}, valid models: {self.claude_models}")
+        if not model_id:
+            model_id = self.claude_models[0]
+        await self.limiter.wait()
+        def sync_call():
+            start_time = time.time()
+            res = self.claude_client.messages.create(
+                max_tokens=10,
+                model=model_id,
+                messages=msgs,
+            )
+            end_time = time.time()
+            execution_time = end_time - start_time
+            return res, start_time, execution_time
+        response, start_time, exec_time = await asyncio.to_thread(sync_call)
+        answer = response.content[0].text
+        return answer
+
+    async def call_gemini(self, msgs: str, model_id: str=""):
+        """Generate something w/ Gemini
+        """
+        if model_id and model_id not in self.gemini_models:
+            raise ValueError(f"Invalid model ID: {model_id}, valid models: {self.gemini_models}")
+        if not model_id:
+            model_id = "gemini-2.5-flash-lite"
+        await self.limiter.wait()
+        def sync_call():
+            start_time = time.time()
+            res = self.gemini_client.models.generate_content(
+                model=model_id,
+                contents=msgs,
+            )
+            end_time = time.time()
+            execution_time = end_time - start_time
+            return res, start_time, execution_time
+        response, start_time, exec_time = await asyncio.to_thread(sync_call)
+        answer = response.text
+        return answer, (start_time, exec_time)
 
     async def call_deepseek(self, msgs, reasoner: bool=False, temperature: float=0.6):
         """Generate something w/ Deepseek
@@ -69,10 +123,8 @@ class LLMClient:
         return (answer, response_metadata)
 
 async def test():
-    with open("config.yaml", 'r') as f:
-        config = yaml.safe_load(f)
-    # print(config["api_key"])
-    client = LLMClient((300,60), config["api_key"])
+    config = Config("config.yaml")
+    client = LLMClient((300,60), config)
     test_msg = [{"role": "system", "content": "Hello"}]
     response, metadata = await client.call_deepseek(test_msg)
     print(response)
