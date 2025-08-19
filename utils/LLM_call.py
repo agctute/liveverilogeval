@@ -22,27 +22,25 @@ def extract_between_markers(text: str, begin_marker: str, end_marker: str) -> st
 class LLMClient:
     """Client class for interacting with LLMs
         Args:
-        limiter_params - rate limiter settings (# of calls / # of seconds)
         config - Config object containing API keys and other configuration
     """
-    def __init__(self, limiter_params: Tuple[int, int], config: Config) -> None:
+    def __init__(self, config: Config) -> None:
         """Init class
 
         Args:
-        limiter_params - rate limiter settings (# of calls / # of seconds)
         config - Config object containing API keys and other configuration
         """
-        self.limiter = Limiter(limiter_params[0]/limiter_params[1])
+        self.limiter = Limiter(config.calls_per_min/60)
         self.deepseek_client = OpenAI(api_key=config.deepseek_api_key, base_url="https://api.deepseek.com")
         self.claude_client = anthropic.Anthropic(api_key=config.claude_api_key)
         self.claude_models = [model_id.id for model_id in self.claude_client.models.list(limit=20)]
         self.gemini_client = genai.Client(api_key=config.gemini_api_key)
         self.gemini_models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.5-flash-lite"]
 
-    async def call(self, msg: str, model: str="deepseek", model_id: str="") -> None:
+    async def call(self, msg: str, model: str="deepseek", model_id: str="", temperature: float=0.8) -> None:
         if model == "deepseek":
             messages = [{"role": "user", "content": msg}]
-            return await self.call_deepseek(messages, model_id)
+            return await self.call_deepseek(messages, model_id, temperature)
         elif model == "claude":
             messages = [{"role": "user", "content": msg}]
             return await self.call_claude(messages, model_id)
@@ -124,9 +122,9 @@ class LLMClient:
 
 async def test():
     config = Config("config.yaml")
-    client = LLMClient((300,60), config)
+    client = LLMClient(config)
     test_msg = [{"role": "system", "content": "Hello"}]
-    response, metadata = await client.call_deepseek(test_msg)
+    response, metadata = await client.call(test_msg)
     print(response)
     print("------------------------------------")
     print(metadata)

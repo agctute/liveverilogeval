@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 import traceback
 import asyncio
+from utils.config import Config
 
 def rename_modules_and_instantiations(verilog_code, obscure_names: bool = False):
     # Step 1: Find all module names (including those with parameters using #(...))
@@ -124,13 +125,14 @@ async def test_check_equivalence():
     Test equivalence checking by comparing each verified file with itself.
     This should always return True (equivalent) for all files.
     """
-    batch_file_path = Path("./yosys_files/")
+    config = Config("config.yaml")
+    batch_file_path = Path(config.get_yosys_batch_dir())
     batch_file_path.mkdir(exist_ok=True)
     
     # Yosys location - adjust this path as needed
     yosys_location = "/usr/local/bin/yosys"  # Default location, may need adjustment
     
-    rtllm_dir = Path("./rtllm_modules").absolute()
+    rtllm_dir = Path(config.starting_verilog_dir).absolute()
     total_count = 0
     equivalent_count = 0
     error_count = 0
@@ -184,7 +186,8 @@ async def test_check_equivalence():
     return equivalent_count == total_count
 
 async def test_check_equivalence_single(design: Path):
-    batch_file_path = Path("./yosys_files/")
+    config = Config("config.yaml")
+    batch_file_path = Path(config.get_yosys_batch_dir())
     batch_file_path.mkdir(exist_ok=True)
     yosys_location = "/usr/local/bin/yosys"  # Default location, may need adjustment
 
@@ -218,6 +221,7 @@ async def test_check_equivalence_single(design: Path):
 
 if __name__ == "__main__":
     # test_check_equivalence()
-    design_dir = Path("./rtllm_modules/div_16bit").absolute()
+    config = Config("config.yaml")
+    design_dir = Path(config.starting_verilog_dir) / "div_16bit"
     verified_file = design_dir / "verified_div_16bit.v"
     # test_check_equivalence_single(verified_file)

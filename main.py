@@ -1,29 +1,27 @@
 from utils.generators import create_generators, DebugLogger
 from entry_types import DesignEntry, Database
 from utils.LLM_call import LLMClient
-import yaml
 import asyncio
 import json
 from pathlib import Path
+from utils.config import Config
 
 async def run():
     # Load existing designs from JSONL file
     with open("./data/designs.jsonl", "r") as f:
         data = [json.loads(line) for line in f]
 
-    with open("config.yaml", "r") as f:
-        config = yaml.safe_load(f)
-    client = LLMClient((300, 60), config["api_key"])
+    config = Config("config.yaml")
+    client = LLMClient(config)
 
-    debug_enabled = True
-    debug_log_file = "./logs/generator_debug.log"
+    debug_enabled, debug_log_file = config.get_debug_settings()
 
     # Create output directory for results
     output_dir = Path("./results")
     output_dir.mkdir(exist_ok=True)
 
     tasks = [
-        process_single_design(design["content"], client, debug_enabled, debug_log_file) for design in data
+        process_single_design(design["content"], client, config) for design in data
     ]
     print(f"Processing {len(tasks)} designs with mutation pipeline")
     results = await asyncio.gather(*tasks)
@@ -56,7 +54,7 @@ async def run():
     
     return all_questions
 
-async def process_single_design(verilog_code: str, client: LLMClient, debug_enabled: bool = False, debug_log_file: str = "./logs/generator_debug.log"):
+async def process_single_design(verilog_code: str, client: LLMClient, config: Config):
     """Process a single design through the complete mutation and question generation pipeline."""
     design_entry = DesignEntry(verilog_code)
     
@@ -68,10 +66,7 @@ async def process_single_design(verilog_code: str, client: LLMClient, debug_enab
         qg, ag, vqg, mg, mutg = create_generators(
             design_entry=design_entry,
             client=client,
-            n_answers=8,
-            max_concurrent_yosys=8,
-            debug_enabled=debug_enabled,
-            debug_log_file=debug_log_file
+            config=config
         )
         
         print("  Generating bug categories...")
@@ -95,14 +90,11 @@ async def process_single_design(verilog_code: str, client: LLMClient, debug_enab
             mutant_qg, mutant_ag, mutant_vqg, _, _ = create_generators(
                 design_entry=mutant_design_entry,
                 client=client,
-                n_answers=8,
-                max_concurrent_yosys=8,
-                debug_enabled=debug_enabled,
-                debug_log_file=debug_log_file
+                config=config
             )
             
-            # Generate 3 questions for this mutant in parallel
-            question_tasks = [mutant_qg.generate(temperature=0.6) for _ in range(3)]
+            # Generate questions for this mutant in parallel
+            question_tasks = [mutant_qg.generate(temperature=0.6) for _ in range(config.questions_n)]
             
             try:
                 questions = await asyncio.gather(*question_tasks, return_exceptions=True)
@@ -122,10 +114,7 @@ async def process_single_design(verilog_code: str, client: LLMClient, debug_enab
                     question_qg, question_ag, question_vqg, _, _ = create_generators(
                         design_entry=question_design_entry,
                         client=client,
-                        n_answers=10,
-                        max_concurrent_yosys=2,
-                        debug_enabled=debug_enabled,
-                        debug_log_file=debug_log_file
+                        config=config
                     )
                     
                     # Set the question for the answer generator
@@ -252,20 +241,8 @@ async def process_single_design(verilog_code: str, client: LLMClient, debug_enab
 async def test_mutation_pipeline():
     """Test the complete mutation pipeline on sample designs."""
     
-    try:
-        with open("config.yaml", "r") as f:
-            config = yaml.safe_load(f)
-        api_key = config["api_key"]
-    except FileNotFoundError:
-        print("Error: config.yaml not found. Please create it with your API key.")
-        return
-    except KeyError:
-        print("Error: config.yaml missing 'api_key' field.")
-        return
-    
-    client = LLMClient((60, 60), api_key)
-    debug_enabled = True
-    debug_log_file = "./logs/mutation_test_debug.log"
+    config = Config("config.yaml")
+    client = LLMClient(config)
     
     # Sample designs to test
     sample_designs = [
@@ -302,198 +279,43 @@ endmodule"""
     print(f"Testing mutation pipeline on {len(sample_designs)} sample designs...")
     print("=" * 80)
     
-    async def process_test_design(design_data, design_index):
-        """Process a single test design."""
-        print(f"\nProcessing design {design_index + 1}: {design_data['name']}")
-        print("-" * 60)
-        
-        try:
-            design_entry = DesignEntry(design_data["content"])
-            
-            # Create all generators
-            qg, ag, vqg, mg, mutg = create_generators(
-                design_entry=design_entry,
-                client=client,
-                n_answers=5,
-                max_concurrent_yosys=2,
-                debug_enabled=debug_enabled,
-                debug_log_file=debug_log_file
-            )
-            
-            # Generate bug categories
-            print("  Generating bug categories...")
-            bug_categories = await mg.generate_bug_categories(temperature=0.7)
-            print(f"  Generated {len(bug_categories)} bug categories")
-            
-            # Generate mutants
-            print("  Generating mutants...")
-            mutants = await mutg.generate_mutants(bug_categories, temperature=0.8)
-            print(f"  Generated {len(mutants)} mutants")
-            
-            # Generate questions for each mutant in parallel
-            print("  Generating questions for each mutant...")
-            
-            async def generate_questions_for_mutant(mutant_data, mutant_index):
-                """Generate questions for a single mutant."""
-                mutant_code, bug_type = mutant_data
-                print(f"    Processing mutant {mutant_index + 1} (bug: {bug_type})...")
-                
-                mutant_design_entry = DesignEntry(mutant_code)
-                
-                mutant_qg, mutant_ag, mutant_vqg, _, _ = create_generators(
-                    design_entry=mutant_design_entry,
-                    client=client,
-                    n_answers=5,
-                    max_concurrent_yosys=2,
-                    debug_enabled=debug_enabled,
-                    debug_log_file=debug_log_file
-                )
-                
-                # Generate 3 questions for this mutant in parallel
-                question_tasks = [mutant_qg.generate(temperature=0.6) for _ in range(3)]
-                
-                try:
-                    questions = await asyncio.gather(*question_tasks, return_exceptions=True)
-                    mutant_questions = []
-                    
-                    # Process each question with answer generation and validation
-                    for k, question in enumerate(questions):
-                        if isinstance(question, Exception):
-                            print(f"      Error generating question {k+1}: {question}")
-                            continue
-                        
-                        # Validate the question using ValidQuestionGenerator (this will generate answers)
-                        print(f"        Validating question {k+1}...")
-                        mutant_ag.question = question
-                        is_valid = await mutant_vqg.validate()
-                        print(f"        Question validation result: {is_valid}")
-                        
-                        try:
-                            mutant_questions.append({
-                                "question_number": k + 1,
-                                "question_text": question,
-                                "bug_type": bug_type,
-                                "answers": mutant_vqg.generated_answers,  # Use answers from validation
-                                "validation_result": is_valid,
-                                "valid_question": mutant_vqg.valid_question
-                            })
-                            print(f"      Completed question {k+1} with validation")
-                            
-                        except Exception as e:
-                            print(f"      Error processing question {k+1}: {e}")
-                            mutant_questions.append({
-                                "question_number": k + 1,
-                                "question_text": question,
-                                "bug_type": bug_type,
-                                "answers": [],
-                                "validation_result": False,
-                                "valid_question": False,
-                                "error": str(e)
-                            })
-                            continue
-                    
-                    print(f"    Generated {len(mutant_questions)} questions for mutant {mutant_index + 1}")
-                    return mutant_questions
-                    
-                except Exception as e:
-                    print(f"    Error processing mutant {mutant_index + 1}: {e}")
-                    return []
-            
-            # Process all mutants in parallel
-            mutant_tasks = [
-                generate_questions_for_mutant(mutant_data, j) 
-                for j, mutant_data in enumerate(mutants)
-            ]
-            
-            all_questions_lists = await asyncio.gather(*mutant_tasks, return_exceptions=True)
-            
-            # Flatten the results
-            all_questions = []
-            for questions_list in all_questions_lists:
-                if isinstance(questions_list, Exception):
-                    print(f"  Error processing mutant: {questions_list}")
-                    continue
-                all_questions.extend(questions_list)
-            
-            # Store results
-            result = {
-                "design_name": design_data["name"],
-                "design_hash": design_entry.hash,
-                "original_code": design_data["content"],
-                "bug_categories": bug_categories,
-                "mutants": [
-                    {
-                        "bug_type": bug_type,
-                        "mutant_code": mutant_code,
-                        "code_length": len(mutant_code)
-                    }
-                    for mutant_code, bug_type in mutants
-                ],
-                "questions": all_questions,
-                "total_mutants": len(mutants),
-                "total_questions": len(all_questions),
-                "timestamp": asyncio.get_event_loop().time()
-            }
-            
-            print(f"  ✓ Successfully processed {design_data['name']}")
-            return result
-            
-        except Exception as e:
-            print(f"  ✗ Error processing {design_data['name']}: {e}")
-            return {
-                "design_name": design_data["name"],
-                "error": str(e),
-                "timestamp": asyncio.get_event_loop().time()
-            }
+    design_entry = DesignEntry(sample_designs[0]["content"])
+
+    # Create all generators
+    qg, ag, vqg, mg, mutg = create_generators(
+        design_entry=design_entry,
+        client=client,
+        config=config
+    )
     
-    # Process all test designs in parallel
-    test_tasks = [
-        process_test_design(design_data, i) 
-        for i, design_data in enumerate(sample_designs)
-    ]
+    # Generate bug categories
+    print("  Generating bug categories...")
+    bug_categories = await mg.generate_bug_categories(temperature=0.7)
+    print(f"  Generated {len(bug_categories)} bug categories")
     
-    all_results = await asyncio.gather(*test_tasks, return_exceptions=True)
+    # Generate mutants
+    print("  Generating mutants...")
+    mutants = await mutg.generate_mutants(bug_categories, temperature=0.8)
+    print(f"  Generated {len(mutants)} mutants")
     
-    # Handle any exceptions from parallel execution
-    processed_results = []
-    for i, result in enumerate(all_results):
-        if isinstance(result, Exception):
-            print(f"Error processing design {i+1}: {result}")
-            processed_results.append({
-                "design_name": f"Design_{i+1}",
-                "error": str(result),
-                "timestamp": asyncio.get_event_loop().time()
-            })
-        else:
-            processed_results.append(result)
-    
-    # Save results to JSONL file
-    output_dir = Path("./mutants")
-    output_dir.mkdir(exist_ok=True)
-    
-    output_file = output_dir / "mutants.jsonl"
-    
-    print(f"\nSaving results to {output_file}...")
-    with open(output_file, "w", encoding="utf-8") as f:
-        for result in processed_results:
-            f.write(json.dumps(result, ensure_ascii=False) + "\n")
-    
-    print(f"✓ Results saved to {output_file}")
-    
-    # Print summary
-    successful_designs = [r for r in processed_results if "error" not in r]
-    print(f"\nSummary:")
-    print(f"  Total designs processed: {len(processed_results)}")
-    print(f"  Successful: {len(successful_designs)}")
-    print(f"  Failed: {len(processed_results) - len(successful_designs)}")
-    
-    if successful_designs:
-        total_mutants = sum(len(d["mutants"]) for d in successful_designs)
-        total_questions = sum(len(d["questions"]) for d in successful_designs)
-        print(f"  Total mutants generated: {total_mutants}")
-        print(f"  Total questions generated: {total_questions}")
-    
-    return processed_results
+    # Generate questions for each mutant in parallel
+    print("  Generating questions for each mutant...")
+    q_tasks = [qg.generate(temperature=0.6) for _ in range(2)]
+    questions = await asyncio.gather(*q_tasks, return_exceptions=True)
+
+
+
+    for question in questions:
+        print(question)
+
+    # Validate questions
+    v_tasks = [vqg.validate() for _ in range(2)]
+    v_results = await asyncio.gather(*v_tasks, return_exceptions=True)
+    for v_result in v_results:
+        print(v_result)
+        print("-" * 50)
+
+    return questions
 
 if __name__ == "__main__":
     print("Comprehensive Design Processing Pipeline")
@@ -507,7 +329,7 @@ if __name__ == "__main__":
     print("=" * 50)
     
     # Run the main pipeline
-asyncio.run(run())
+    # asyncio.run(run())
     
     # Uncomment to run the test pipeline instead
-    # asyncio.run(test_mutation_pipeline())
+    asyncio.run(test_mutation_pipeline())

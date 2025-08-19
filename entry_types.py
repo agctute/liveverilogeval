@@ -117,8 +117,8 @@ class Database:
     """
     def __init__(self):
         self.designs = defaultdict(list)
-        self.questions = []  # List of unique QuestionEntry objects
-        self.question_search = defaultdict(list)  # Maps equiv_id to list of QuestionEntry objects (may contain duplicates)
+        self.questions = []
+        self.question_search = defaultdict(list)
     
     def add_design(self, content: str, equiv_id: str="") -> bool:
         """
@@ -172,13 +172,11 @@ class Database:
         
         print(f"Merging {group_one} and {group_two}")
         if group_one < group_two:
-            # Merge into group_one
             for d in self.designs[group_two]:
                 d.equiv_id = group_one
             self.designs[group_one].extend(self.designs[group_two])
             self.designs.pop(group_two, None)
             
-            # Update questions: remove group_two from equiv_ids and add group_one
             for q in self.question_search[group_two]:
                 q.equiv_ids.discard(group_two)
                 q.equiv_ids.add(group_one)
@@ -186,13 +184,11 @@ class Database:
             self.question_search.pop(group_two, None)
             return group_one
         else: 
-            # Merge into group_two
             for d in self.designs[group_one]:
                 d.equiv_id = group_two
             self.designs[group_two].extend(self.designs[group_one])
             self.designs.pop(group_one, None)
             
-            # Update questions: remove group_one from equiv_ids and add group_two
             for q in self.question_search[group_one]:
                 q.equiv_ids.discard(group_one)
                 q.equiv_ids.add(group_two)
@@ -214,22 +210,18 @@ class Database:
         Raises:
             ValueError: If any of the equivalence IDs are not found in the designs.
         """
-        # Validate that all equivalence IDs exist in designs
         for equiv_id in equiv_ids:
             if equiv_id not in self.designs:
                 raise ValueError(f"{equiv_id} is not an ID for any design group")
 
         hash_id = hash_string(content)
         
-        # Check if question already exists in the questions list
         if any(q.hash == hash_id for q in self.questions):
             return True
         
-        # Create new question and add to questions list
         new_question = QuestionEntry(content, equiv_ids)
         self.questions.append(new_question)
         
-        # Add to search index for each equivalence group
         for equiv_id in equiv_ids:
             self.question_search[equiv_id].append(new_question)
         
@@ -270,14 +262,12 @@ class Database:
         design_mode = 'w' if replace else 'a'
         question_mode = 'w' if replace else 'a'
 
-        # Write designs
         with open(design_file, design_mode, encoding='utf-8') as df:
             for group in self.designs.values():
                 for design in group:
                     json.dump(design.to_dict(), df)
                     df.write('\n')
 
-        # Write questions
         with open(question_file, question_mode, encoding='utf-8') as qf:
             for question in self.questions:
                 json.dump(question.to_dict(), qf)
@@ -297,12 +287,10 @@ class Database:
         assert design_file.suffix == '.jsonl', f"design_file must be a .jsonl file, got {design_file}"
         assert question_file.suffix == '.jsonl', f"question_file must be a .jsonl file, got {question_file}"
 
-        # Clear current data
         self.designs = defaultdict(list)
         self.questions = []
         self.question_search = defaultdict(list)
 
-        # Read designs
         seen_design_hashes = set()
         if design_file.exists():
             with open(design_file, 'r', encoding='utf-8') as df:
@@ -314,14 +302,12 @@ class Database:
                     content = entry.get('content', '')
                     design_entry = DesignEntry(content, equiv_id)
                     if design_entry.hash in seen_design_hashes:
-                        continue  # skip duplicate
+                        continue
                     seen_design_hashes.add(design_entry.hash)
-                    # Check for duplicate hash in group
                     if any(d.hash == design_entry.hash for d in self.designs[equiv_id]):
                         continue
                     self.designs[equiv_id].append(design_entry)
 
-        # Read questions
         seen_question_hashes = set()
         if question_file.exists():
             with open(question_file, 'r', encoding='utf-8') as qf:
@@ -331,7 +317,6 @@ class Database:
                     entry = json.loads(line)
                     equiv_ids_data = entry.get('equivalence_group', entry.get('equiv_ids', []))
                     
-                    # Handle both old format (single ID) and new format (list of IDs)
                     if isinstance(equiv_ids_data, str):
                         equiv_ids = {equiv_ids_data}
                     elif isinstance(equiv_ids_data, list):
@@ -343,12 +328,10 @@ class Database:
                     question_entry = QuestionEntry(content, equiv_ids)
                     
                     if question_entry.hash in seen_question_hashes:
-                        continue  # skip duplicate
+                        continue
                     seen_question_hashes.add(question_entry.hash)
                     
-                    # Add to questions list (unique storage)
                     self.questions.append(question_entry)
                     
-                    # Add to search index for each equivalence group
                     for equiv_id in equiv_ids:
                         self.question_search[equiv_id].append(question_entry)
